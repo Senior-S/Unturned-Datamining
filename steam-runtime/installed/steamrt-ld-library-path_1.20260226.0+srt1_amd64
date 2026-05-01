@@ -1,0 +1,7 @@
+drwxr-xr-x root/root         0 2026-02-26 16:28 ./
+drwxr-xr-x root/root         0 2026-02-26 16:28 ./usr/
+drwxr-xr-x root/root         0 2026-02-26 16:28 ./usr/share/
+drwxr-xr-x root/root         0 2026-02-26 16:28 ./usr/share/doc/
+drwxr-xr-x root/root         0 2026-02-26 16:28 ./usr/share/doc/steamrt-ld-library-path/
+-rw-r--r-- root/root      2820 2026-02-26 15:43 ./usr/share/doc/steamrt-ld-library-path/copyright
+-rw-r--r-- root/root     13946 2026-02-26 16:28 ./usr/share/doc/steamrt-ld-library-path/changelog.amd64.gz
