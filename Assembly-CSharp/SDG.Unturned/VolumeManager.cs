@@ -8,6 +8,8 @@ namespace SDG.Unturned;
 
 public class VolumeManager<TVolume, TManager> : VolumeManagerBase where TVolume : LevelVolume<TVolume, TManager> where TManager : VolumeManager<TVolume, TManager>
 {
+    private List<TVolume> tempOverlapTestVolumes;
+
     private ELevelVolumeVisibility visibility;
 
     internal Color debugColor;
@@ -22,9 +24,26 @@ public class VolumeManager<TVolume, TManager> : VolumeManagerBase where TVolume 
     /// </summary>
     protected bool allowInstantiation = true;
 
+    /// <summary>
+    /// Static volumes optimization is only useful for volume types which frequently lookup volume(s)
+    /// overlapping a given position.
+    /// </summary>
+    protected bool benefitsFromStaticVolumes;
+
     protected bool supportsFalloff;
 
     protected List<TVolume> allVolumes;
+
+    /// <summary>
+    /// Ideally this might be a BVH or octree/quadtree or something, but RegionList is simple and
+    /// already works / will be good enough for a quick patch.
+    /// </summary>
+    internal RegionList<TVolume> regionalVolumes;
+
+    /// <summary>
+    /// Volumes added AFTER regionalVolumes was initialized.
+    /// </summary>
+    internal List<TVolume> dynamicVolumes;
 
     private static TManager instance;
 
@@ -52,6 +71,22 @@ public class VolumeManager<TVolume, TManager> : VolumeManagerBase where TVolume 
             {
                 allVolume.UpdateEditorVisibility(visibility);
             }
+        }
+    }
+
+    internal override bool WantsStaticVolumes
+    {
+        get
+        {
+            if (allVolumes.Count < 4)
+            {
+                return false;
+            }
+            if (!benefitsFromStaticVolumes)
+            {
+                return false;
+            }
+            return true;
         }
     }
 
@@ -85,13 +120,45 @@ public class VolumeManager<TVolume, TManager> : VolumeManagerBase where TVolume 
         }
     }
 
+    protected List<TVolume> GetRegionalAndDynamicVolumes(Vector3 position)
+    {
+        tempOverlapTestVolumes.Clear();
+        List<TVolume> list = regionalVolumes.GetList(position);
+        if (list != null)
+        {
+            foreach (TVolume item in list)
+            {
+                if (item != null && item.enabled)
+                {
+                    tempOverlapTestVolumes.Add(item);
+                }
+            }
+        }
+        tempOverlapTestVolumes.AddRange(dynamicVolumes);
+        return tempOverlapTestVolumes;
+    }
+
+    protected List<TVolume> GetOverlapTestVolumes(Vector3 position)
+    {
+        if (regionalVolumes != null)
+        {
+            return GetRegionalAndDynamicVolumes(position);
+        }
+        return allVolumes;
+    }
+
     public TVolume GetFirstOverlappingVolume(Vector3 position)
     {
-        foreach (TVolume allVolume in allVolumes)
+        List<TVolume> overlapTestVolumes = GetOverlapTestVolumes(position);
+        if (overlapTestVolumes == null)
         {
-            if (allVolume.IsPositionInsideVolume(position))
+            return null;
+        }
+        foreach (TVolume item in overlapTestVolumes)
+        {
+            if (item.IsPositionInsideVolume(position))
             {
-                return allVolume;
+                return item;
             }
         }
         return null;
@@ -105,11 +172,16 @@ public class VolumeManager<TVolume, TManager> : VolumeManagerBase where TVolume 
     public void GetOverlappingVolumesWithAlpha(Vector3 position, List<VolumeAlphaPair<TVolume>> results)
     {
         results.Clear();
-        foreach (TVolume allVolume in allVolumes)
+        List<TVolume> overlapTestVolumes = GetOverlapTestVolumes(position);
+        if (overlapTestVolumes == null)
         {
-            if (allVolume.IsPositionInsideVolumeWithAlpha(position, out var alpha))
+            return;
+        }
+        foreach (TVolume item in overlapTestVolumes)
+        {
+            if (item.IsPositionInsideVolumeWithAlpha(position, out var alpha))
             {
-                results.Add(new VolumeAlphaPair<TVolume>(allVolume, alpha));
+                results.Add(new VolumeAlphaPair<TVolume>(item, alpha));
             }
         }
     }
@@ -137,6 +209,22 @@ public class VolumeManager<TVolume, TManager> : VolumeManagerBase where TVolume 
         return allVolumes;
     }
 
+    /// <summary>
+    /// Called in play mode if level has asserted that volumes do not move.
+    /// </summary>
+    internal override void InitStaticVolumes()
+    {
+        regionalVolumes = new RegionList<TVolume>(8);
+        foreach (TVolume allVolume in allVolumes)
+        {
+            Bounds bounds = allVolume.CalculateWorldBounds();
+            regionalVolumes.Add(bounds, allVolume);
+        }
+        dynamicVolumes = new List<TVolume>();
+        tempOverlapTestVolumes = new List<TVolume>();
+        UnturnedLog.info($"{base.FriendlyName} manager using regional lookup for {allVolumes.Count} volumes");
+    }
+
     public bool Raycast(Ray ray, out RaycastHit hitInfo, out TVolume hitVolume, float maxDistance)
     {
         hitInfo = default(RaycastHit);
@@ -161,11 +249,21 @@ public class VolumeManager<TVolume, TManager> : VolumeManagerBase where TVolume 
             volume.UpdateEditorVisibility(visibility);
         }
         allVolumes.Add(volume);
+        if (dynamicVolumes != null)
+        {
+            dynamicVolumes.Add(volume);
+            volume.inDynamicVolumesList = true;
+        }
     }
 
     public virtual void RemoveVolume(TVolume volume)
     {
         allVolumes.RemoveFast(volume);
+        if (volume.inDynamicVolumesList && dynamicVolumes != null)
+        {
+            dynamicVolumes.RemoveFast(volume);
+            volume.inDynamicVolumesList = false;
+        }
     }
 
     public VolumeManager()

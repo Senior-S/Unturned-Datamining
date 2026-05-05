@@ -1574,6 +1574,16 @@ public class Level : MonoBehaviour
             LoadingUI.NotifyLevelLoadingProgress(0.84210527f);
             yield return null;
         }
+        if (!isEditor && (info?.configData?.Enable_Static_Volumes).GetValueOrDefault())
+        {
+            foreach (VolumeManagerBase allManager in VolumeManagerBase.allManagers)
+            {
+                if (allManager.WantsStaticVolumes)
+                {
+                    allManager.InitStaticVolumes();
+                }
+            }
+        }
         includeHash("Level.dat", info.hash);
         if (info.configData.Hash != null)
         {
