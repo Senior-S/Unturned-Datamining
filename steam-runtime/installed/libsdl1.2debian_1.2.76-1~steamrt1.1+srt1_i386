@@ -1,0 +1,17 @@
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/share/
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/share/doc/
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/share/doc/libsdl1.2debian/
+-rw-r--r-- root/root      6297 2026-04-13 15:38 ./usr/share/doc/libsdl1.2debian/copyright
+-rw-r--r-- root/root      6270 2025-07-31 14:08 ./usr/share/doc/libsdl1.2debian/README.md.gz
+-rw-r--r-- root/root      2210 2023-05-19 13:18 ./usr/share/doc/libsdl1.2debian/COMPATIBILITY.md.gz
+-rw-r--r-- root/root      2592 2022-10-24 18:44 ./usr/share/doc/libsdl1.2debian/HOW_TO_TEST_GAMES.md.gz
+-rw-r--r-- root/root      7092 2026-04-14 20:19 ./usr/share/doc/libsdl1.2debian/changelog.Debian.i386.gz
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/share/lintian/
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/share/lintian/overrides/
+-rw-r--r-- root/root       173 2026-04-13 15:38 ./usr/share/lintian/overrides/libsdl1.2debian
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/lib/
+drwxr-xr-x root/root         0 2026-04-14 20:21 ./usr/lib/i386-linux-gnu/
+-rw-r--r-- root/root    174060 2026-04-14 20:21 ./usr/lib/i386-linux-gnu/libSDL-1.2.so.1.2.76
+lrwxrwxrwx root/root         0 2026-04-14 20:21 ./usr/lib/i386-linux-gnu/libSDL-1.2.so.0 -> libSDL-1.2.so.1.2.76

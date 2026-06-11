@@ -1825,7 +1825,8 @@ public class Assets : MonoBehaviour
         ResourceHash.Initialize();
         if ((bool)shouldLoadAnyAssets)
         {
-            AddSearchLocation(Path.Combine(ReadWrite.PATH, "Bundles"), coreOrigin);
+            string path = Path.Combine(ReadWrite.PATH, "Bundles");
+            AddSearchLocation(path, coreOrigin);
             if (Dedicator.IsDedicatedServer)
             {
                 AddDedicatedServerUgcSearchLocations();
@@ -1876,6 +1877,11 @@ public class Assets : MonoBehaviour
     {
         yield return LoadAllAssets();
         hasFinishedInitialStartupLoading = true;
+        if ((bool)shouldLoadAnyAssets && coreMasterBundle == null)
+        {
+            Provider.QuitGame("Missing core asset bundle. By default this is loaded from the Steam install.");
+            yield break;
+        }
         if (Dedicator.IsDedicatedServer)
         {
             Provider.host();
