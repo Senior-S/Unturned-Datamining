@@ -1,0 +1,11 @@
+drwxr-xr-x root/root         0 2026-05-22 18:07 ./
+drwxr-xr-x root/root         0 2026-05-22 18:07 ./usr/
+drwxr-xr-x root/root         0 2026-05-22 18:07 ./usr/share/
+drwxr-xr-x root/root         0 2026-05-22 18:07 ./usr/share/doc/
+drwxr-xr-x root/root         0 2026-05-22 18:07 ./usr/share/doc/libsteam-runtime-tools-0-0/
+-rw-r--r-- root/root      8738 2026-05-22 17:00 ./usr/share/doc/libsteam-runtime-tools-0-0/copyright
+-rw-r--r-- root/root     59930 2026-05-22 18:01 ./usr/share/doc/libsteam-runtime-tools-0-0/changelog.amd64.gz
+drwxr-xr-x root/root         0 2026-05-22 18:07 ./usr/lib/
+drwxr-xr-x root/root         0 2026-05-22 18:08 ./usr/lib/x86_64-linux-gnu/
+-rw-r--r-- root/root    547384 2026-05-22 18:08 ./usr/lib/x86_64-linux-gnu/libsteam-runtime-tools-0.so.0.20260522.0
+lrwxrwxrwx root/root         0 2026-05-22 18:07 ./usr/lib/x86_64-linux-gnu/libsteam-runtime-tools-0.so.0 -> libsteam-runtime-tools-0.so.0.20260522.0
