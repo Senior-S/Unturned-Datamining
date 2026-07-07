@@ -60,11 +60,22 @@ RUNTIMES = [
     'steamrt4',     # Steam Runtime 4, based on Debian 13
     'steamrt5',     # Steam Runtime 5, provisionally based on Debian 14+
 ]
+MAJOR_VERSIONS = {
+    'scout': '1',
+    'soldier': '2',
+    'sniper': '3',
+}
 
 # All available compatibility targets, including Windows (via Proton)
 # and native Linux (whatever the host system happens to be running, e.g.
 # SteamOS, Debian, Arch, Fedora).
-COMPAT_TARGETS = RUNTIMES + ['windows', 'host']
+COMPAT_TARGETS = RUNTIMES + [
+    'sniper-arm64',
+    'steamrt4-arm64',
+    'steamrt5-arm64',
+    'windows',
+    'host',
+]
 
 # Keys treated as "Enter" by GTK
 ENTER_KEYS = [
@@ -169,10 +180,16 @@ class Proton(Component):
             self.runs_on = 'soldier'
         elif '1628350' in content:
             self.runs_on = 'sniper'
+        elif '3810310' in content:
+            self.runs_on = 'sniper-arm64'
         elif '4183110' in content:
             self.runs_on = 'steamrt4'
+        elif '4185400' in content:
+            self.runs_on = 'steamrt4-arm64'
         elif '4185420' in content:
             self.runs_on = 'steamrt5'
+        elif '4185440' in content:
+            self.runs_on = 'steamrt5-arm64'
         else:
             self.runs_on = 'scout'
 
@@ -238,26 +255,36 @@ class Runtime(Component):
         self.provides = ''
 
 
+def _get_ldlp_runtime_version(path):
+    # type: (str) -> str
+
+    try:
+        with open(os.path.join(path, 'version.txt')) as reader:
+            version = reader.read().strip()
+    except Exception:
+        logger.debug('Failed to get LDLP runtime version', exc_info=True)
+        version = ''
+
+    if version.startswith('steam-runtime_'):
+        version = 'scout ' + version[len('steam-runtime_'):]
+
+    return version
+
+
 class LdlpRuntime(Runtime):
     def __init__(
         self,
         path,           # type: str
         home,           # type: str
+        version=''      # type: str
     ):  # type: (...) -> None
         super().__init__(path, home=home)
 
-        try:
-            with open(os.path.join(path, 'version.txt')) as reader:
-                version = reader.read().strip()
-        except Exception:
-            logger.debug('Failed to get LDLP runtime version', exc_info=True)
-            version = ''
+        if not version:
+            version = _get_ldlp_runtime_version(path)
 
-        if version.startswith('steam-runtime_'):
-            version = 'scout ' + version[len('steam-runtime_'):]
-
-            if not self.provides:
-                self.provides = 'scout'
+        if not self.provides:
+            self.provides = 'scout'
 
         if path.startswith(self.home + '/'):
             path = '~' + path[len(self.home):]
@@ -289,6 +316,36 @@ class LaunchAdverb(Component):
         self.argv = argv
 
 
+class LegacyRuntime(LdlpRuntime):
+    def __init__(
+        self,
+        path,           # type: str
+        home,           # type: str
+        argv,           # type: typing.List[str]
+    ):  # type: (...) -> None
+        included_path = os.path.join(path, 'steam-runtime')
+        version = _get_ldlp_runtime_version(included_path)
+
+        included_runtime = None     # type: typing.Optional[LdlpRuntime]
+
+        if version:
+            included_runtime = LdlpRuntime(
+                included_path,
+                home=home,
+                version=version,
+            )
+        else:
+            version = '(unknown version)'
+
+        super().__init__(path, home=home, version=version)
+
+        self.argv = argv
+        self.description = 'Legacy Runtime: ' + self.description
+        self.provides = 'scout'
+        self.runs_on = 'host'
+        self.included_runtime = included_runtime
+
+
 class LayeredRuntime(LdlpRuntime):
     def __init__(
         self,
@@ -296,15 +353,26 @@ class LayeredRuntime(LdlpRuntime):
         home,           # type: str
         argv,           # type: typing.List[str]
     ):  # type: (...) -> None
-        super().__init__(path, home=home)
+        included_path = os.path.join(path, 'steam-runtime')
+        version = _get_ldlp_runtime_version(included_path)
+
+        included_runtime = None     # type: typing.Optional[LdlpRuntime]
+
+        if version:
+            included_runtime = LdlpRuntime(
+                included_path,
+                home=home,
+                version=version,
+            )
+        else:
+            version = '(unknown version)'
+
+        super().__init__(path, home=home, version=version)
+
         self.argv = argv
-
-        if path.startswith(self.home + '/'):
-            path = '~' + path[len(self.home):]
-
-        self.description = path
         self.provides = 'scout'
         self.runs_on = 'soldier'
+        self.included_runtime = included_runtime
 
 
 class ContainerRuntime(Runtime):
@@ -316,14 +384,19 @@ class ContainerRuntime(Runtime):
 
     def _runtime_version(self):
         # type: (...) -> typing.Any
-        if self.provides.startswith('steamrt'):
-            return int(self.provides[len('steamrt'):])
+        if self.provides.endswith('-arm64'):
+            provides = self.provides[:-len('-arm64')]
+        else:
+            provides = self.provides
+
+        if provides.startswith('steamrt'):
+            return int(provides[len('steamrt'):])
 
         return {
             'scout': 1,
             'soldier': 2,
             'sniper': 3,
-        }.get(self.provides, 0)
+        }.get(provides, 0)
 
 
 class ContainerRuntimeDepot(ContainerRuntime):
@@ -392,6 +465,10 @@ class ContainerRuntimeDepot(ContainerRuntime):
 
         if platform[0]:
             self.provides = platform[0]
+
+            if self.path.endswith('-arm64'):
+                self.provides = self.provides + '-arm64'
+
             return platform[0] + ' ' + (depot_version or platform[1])
 
         return '(unknown)'
@@ -512,6 +589,9 @@ class Gui:
         self.default_layered_runtime = (
             None
         )   # type: typing.Optional[LayeredRuntime]
+        self.default_legacy_runtime = (
+            None
+        )   # type: typing.Optional[LegacyRuntime]
         self.default_proton = (
             None
         )   # type: typing.Optional[Proton]
@@ -1012,18 +1092,68 @@ class Gui:
                 )
             )
 
+        if (
+            len(command_argv) > 1
+            and command_argv[0].endswith(
+                'LegacySteamRuntime/legacy-steam-runtime'
+            )
+        ):
+            if args.compatible_with == 'auto':
+                self.app.runs_on = 'scout'
+
+            legacy_args = [command_argv[0]]
+            command_argv = command_argv[1:]
+
+            self.default_legacy_runtime = LegacyRuntime(
+                path=os.path.dirname(legacy_args[0]),
+                home=self.home,
+                argv=legacy_args,
+            )
+            logger.debug(
+                'Detected legacy runtime: %s', to_shell(legacy_args),
+            )
+            logger.debug(
+                'Remaining arguments: %s', to_shell(command_argv),
+            )
+
         for target in RUNTIMES:
+            if target.startswith('steamrt'):
+                major_version = target[len('steamrt'):]
+            else:
+                assert target in MAJOR_VERSIONS, target
+                major_version = MAJOR_VERSIONS[target]
+
             if (
                 len(command_argv) > 2
                 and command_argv[0].endswith((
+                    '/SteamLinuxRuntime_%s/run' % major_version,
+                    '/SteamLinuxRuntime_%s-arm64/run' % major_version,
                     '/SteamLinuxRuntime_%s/run' % target,
+                    '/SteamLinuxRuntime_%s-arm64/run' % target,
                     '/SteamLinuxRuntime_%s/run-in-%s' % (target, target),
+                    '/SteamLinuxRuntime_%s/run-in-%s' % (
+                        major_version, target,
+                    ),
+                    '/SteamLinuxRuntime_%s/_v2-entry-point' % major_version,
+                    '/SteamLinuxRuntime_%s-arm64/_v2-entry-point' % (
+                        major_version,
+                    ),
                     '/SteamLinuxRuntime_%s/_v2-entry-point' % target,
+                    '/SteamLinuxRuntime_%s-arm64/_v2-entry-point' % target,
                 ))
                 and '--' in command_argv[:-1]
             ):
+                if command_argv[0].endswith((
+                    '-arm64/run',
+                    '-arm64/run-in-%s' % target,
+                    '-arm64/_v2-entry-point',
+                )):
+                    arch_suffix = '-arm64'
+                else:
+                    arch_suffix = ''
+
                 if args.compatible_with == 'auto':
-                    self.app.runs_on = target
+                    self.app.runs_on = target + arch_suffix
 
                 runtime_args = []       # type: typing.List[str]
 
@@ -1039,11 +1169,15 @@ class Gui:
                     home=self.home,
                     argv=runtime_args,
                 )
-                runtime.provides = target
+                runtime.provides = target + arch_suffix
                 self.default_container_runtime = runtime
                 self.default_pressure_vessel = runtime.pressure_vessel
 
-                logger.debug('Detected SLR: %s', to_shell(runtime_args))
+                logger.debug(
+                    'Detected SLR: %s (compatible with %s)',
+                    to_shell(runtime_args),
+                    runtime.provides,
+                )
                 logger.debug(
                     'Remaining arguments: %s', to_shell(command_argv),
                 )
@@ -1154,12 +1288,15 @@ class Gui:
 
         seen.add(source_of_runtimes)
 
-        for member in os.listdir(source_of_runtimes):
+        for member in sorted(os.listdir(source_of_runtimes)):
             path = os.path.realpath(
                 os.path.join(source_of_runtimes, member)
             )
 
             if member.startswith('SteamLinuxRuntime') and not in_runtime:
+                logger.debug(
+                    'Discovered possible SLR: %s', path,
+                )
                 if (
                     os.path.isdir(path)
                     and os.path.exists(os.path.join(path, 'run'))
@@ -1181,7 +1318,10 @@ class Gui:
                         argv=[exe, '--'],
                     )
                     logger.debug(
-                        'Discovered container runtime depot: %s', path,
+                        ('Discovered container runtime depot: %s'
+                         ' (compatible with %s)'),
+                        path,
+                        container_runtime.provides or '<unknown>',
                     )
                     logger.debug(
                         'Arguments: %s', to_shell(container_runtime.argv),
@@ -1227,7 +1367,34 @@ class Gui:
 
                 continue
 
+            if member == 'LegacySteamRuntime' and not in_runtime:
+                logger.debug(
+                    'Discovered possible legacy runtime: %s', path,
+                )
+                script = os.path.join(path, 'legacy-steam-runtime')
+
+                if (
+                    os.path.isdir(path)
+                    and os.path.exists(script)
+                    and path not in self.ldlp_runtimes
+                ):
+                    legacy_runtime = LegacyRuntime(
+                        path=path,
+                        home=self.home,
+                        argv=[script],
+                    )
+                    self.ldlp_runtimes[path] = legacy_runtime
+                    ldlp_runtime = legacy_runtime.included_runtime
+
+                    if ldlp_runtime is not None:
+                        self.ldlp_runtimes[ldlp_runtime.path] = ldlp_runtime
+
+                continue
+
             if member.startswith('Proton ') and not in_runtime:
+                logger.debug(
+                    'Discovered possible Proton: %s', path,
+                )
                 if (
                     os.path.isdir(path)
                     and os.path.exists(os.path.join(path, 'proton'))
@@ -1270,7 +1437,7 @@ class Gui:
                     'Discovered possible LD_LIBRARY_PATH runtime: %s', path,
                 )
 
-                if path not in self.container_runtimes:
+                if path not in self.ldlp_runtimes:
                     self.ldlp_runtimes[path] = LdlpRuntime(
                         path,
                         home=self.home,
@@ -1420,10 +1587,29 @@ class Gui:
                     layered_runtime.path,
                     layered_runtime.description,
                 )
+                ldlp_runtime = layered_runtime.included_runtime
+
+                if ldlp_runtime is not None:
+                    self.ldlp_runtimes[ldlp_runtime.path] = ldlp_runtime
 
             selected_ldlp = self.ldlp_runtime_combo.get_active_id()
             self.ldlp_runtime_combo.remove_all()
+            legacy_runtime = self.default_legacy_runtime
+
             self.ldlp_runtime_combo.append(None, "Don't override")
+
+            if legacy_runtime is not None:
+                self.ldlp_runtimes[legacy_runtime.path] = legacy_runtime
+                self.ldlp_runtime_combo.append(
+                    legacy_runtime.path,
+                    legacy_runtime.description,
+                )
+                ldlp_runtime = legacy_runtime.included_runtime
+
+                if ldlp_runtime is not None:
+                    self.ldlp_runtimes[ldlp_runtime.path] = ldlp_runtime
+            elif 'STEAM_RUNTIME' in self.steam_runtime_env:
+                self.ldlp_runtime_combo.append('inherit', 'Inherit')
 
             selected_pv = self.pressure_vessel_combo.get_active_id()
             self.pressure_vessel_combo.remove_all()
@@ -1556,7 +1742,12 @@ class Gui:
 
             for path, ldlp_runtime in sorted(self.ldlp_runtimes.items()):
                 assert ldlp_runtime is not None
-                self.ldlp_runtime_combo.append(path, ldlp_runtime.description)
+
+                if ldlp_runtime != self.default_legacy_runtime:
+                    self.ldlp_runtime_combo.append(
+                        path,
+                        ldlp_runtime.description,
+                    )
 
             for path, proton in sorted(self.proton_versions.items()):
                 assert proton is not None
@@ -1651,6 +1842,7 @@ class Gui:
                     self.ldlp_runtime_combo.set_sensitive(False)
                 else:
                     self.ldlp_runtime_combo.set_sensitive(True)
+                    self.ldlp_runtime_combo.set_active(0)
             else:
                 rt = self.layered_runtimes.get(combo.get_active_id())
                 assert rt
@@ -1664,11 +1856,19 @@ class Gui:
                 else:
                     self.ldlp_runtime_combo.set_sensitive(False)
 
+                if rt.included_runtime is not None:
+                    if not self.ldlp_runtime_combo.set_active_id(
+                        rt.included_runtime.path,
+                    ):
+                        self.ldlp_runtime_combo.set_active(0)
+
     def _ldlp_runtime_changed(self, combo):
         # type: (typing.Any) -> None
         with self._pause_changes():
             if combo.get_active_id() == '/':
                 logger.debug('Selected absence of LD_LIBRARY_PATH runtime')
+            elif combo.get_active_id() == 'inherit':
+                logger.debug('Selected inherited LD_LIBRARY_PATH runtime')
             elif combo.get_active_id() is None:
                 logger.debug(
                     'Selected automatic choice of LD_LIBRARY_PATH runtime',
@@ -1680,6 +1880,9 @@ class Gui:
                     'Selected LD_LIBRARY_PATH runtime: %s %s (%r)',
                     rt.__class__.__name__, rt.path, rt.argv,
                 )
+
+                if isinstance(rt, LegacyRuntime):
+                    self.container_runtime_combo.set_active_id('/')
 
     def _proton_changed(self, combo):
         # type: (typing.Any) -> None
@@ -1739,23 +1942,53 @@ class Gui:
         components = []     # type: typing.List[Component]
         container = None    # type: typing.Optional[Component]
         component = None    # type: typing.Optional[Component]
+        layered = None      # type: typing.Optional[LayeredRuntime]
+        ldlp = None         # type: typing.Optional[LdlpRuntime]
         has_container_runtime = False
         inherit_ldlp_runtime = True
 
         selected = self.ldlp_runtime_combo.get_active_id()
-        component = None
+        ldlp = None
 
         if selected is None or not selected:
-            pass
+            if self.default_legacy_runtime is not None:
+                ldlp = self.default_legacy_runtime
+                inherit_ldlp_runtime = False
         elif selected == '/':
             inherit_ldlp_runtime = False
+        elif selected == 'inherit':
+            inherit_ldlp_runtime = True
         else:
-            component = self.ldlp_runtimes.get(selected)
+            ldlp = self.ldlp_runtimes.get(selected)
 
-        if component is not None:
-            components.append(component)
+        layered_id = self.layered_runtime_combo.get_active_id()
+
+        if layered_id is None or not layered_id or layered_id == '/':
+            layered = None
+        else:
+            layered = self.layered_runtimes.get(layered_id)
+
+        # Traditionally the LD_LIBRARY_PATH runtime was set up before
+        # running adverbs, but LegacySteamRuntime is done after.
+        # If we inherited a STEAM_RUNTIME from Steam, or if we are
+        # not going to use the LDLP runtime for anything else,
+        # we treat a forced LDLP runtime as a replacement for inheriting
+        # from Steam.
+        if (
+            ldlp is not None
+            and not isinstance(ldlp, LegacyRuntime)
+            and (
+                'STEAM_RUNTIME' in self.steam_runtime_env
+                or not layered
+            )
+        ):
+            components.append(ldlp)
 
         components.extend(self.launch_adverbs)
+
+        # LegacySteamRuntime is set up *after* the adverbs.
+        if ldlp is not None and isinstance(ldlp, LegacyRuntime):
+            components.append(ldlp)
 
         selected = self.container_runtime_combo.get_active_id()
 
@@ -1766,26 +1999,24 @@ class Gui:
 
         if container is not None:
             components.append(container)
-            selected = self.layered_runtime_combo.get_active_id()
 
-            if selected is None or not selected or selected == '/':
-                component = None
-            else:
-                component = self.layered_runtimes.get(selected)
-
-            if component is not None:
-                components.append(component)
-                component = None
+            if layered is not None:
+                components.append(layered)
 
                 selected = self.ldlp_runtime_combo.get_active_id()
 
-                if selected is None or not selected:
+                if selected is None or not selected or selected == 'inherit':
                     pass
                 elif selected == '/':
                     # TODO: Shouldn't be allowed?
                     pass
                 else:
                     component = self.ldlp_runtimes.get(selected)
+
+                if isinstance(component, LegacyRuntime):
+                    component = component.included_runtime
+                elif isinstance(component, LayeredRuntime):
+                    component = component.included_runtime
 
                 if component is not None:
                     environ['STEAM_RUNTIME_SCOUT'] = component.path
